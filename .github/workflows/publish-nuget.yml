@@ -23,19 +23,19 @@ jobs:
         dotnet-version: '10.0.x'
     
     - name: Pack WopiHost.Abstractions
-      run: dotnet pack ./src/WopiHost.Abstractions/WopiHost.Abstractions.csproj -c Release /p:TargetFrameworks=net10.0 /p:PackageId=Pilotlight.WopiHost.Abstractions /p:RepositoryUrl=https://github.com/taylordgordon/WopiHost.git /p:Version=${{ github.event.inputs.version || '1.0.0' }} /p:NoWarn=NU5104 /p:NoPackageAnalysis=true
+      run: dotnet pack ./src/WopiHost.Abstractions/WopiHost.Abstractions.csproj -c Release /p:TargetFrameworks=net10.0 /p:PackageId=Pilotlight.WopiHost.Abstractions /p:PackageVersion=${{ github.event.inputs.version || '1.0.0' }} /p:RepositoryUrl=https://github.com/taylordgordon/WopiHost.git /p:NoWarn=NU5104 /p:NoPackageAnalysis=true
     
     - name: Pack WopiHost.Discovery
-      run: dotnet pack ./src/WopiHost.Discovery/WopiHost.Discovery.csproj -c Release /p:TargetFrameworks=net10.0 /p:PackageId=Pilotlight.WopiHost.Discovery /p:RepositoryUrl=https://github.com/taylordgordon/WopiHost.git /p:Version=${{ github.event.inputs.version || '1.0.0' }} /p:NoWarn=NU5104 /p:NoPackageAnalysis=true
+      run: dotnet pack ./src/WopiHost.Discovery/WopiHost.Discovery.csproj -c Release /p:TargetFrameworks=net10.0 /p:PackageId=Pilotlight.WopiHost.Discovery /p:PackageVersion=${{ github.event.inputs.version || '1.0.0' }} /p:RepositoryUrl=https://github.com/taylordgordon/WopiHost.git /p:NoWarn=NU5104 /p:NoPackageAnalysis=true
     
     - name: Pack WopiHost.Core
-      run: dotnet pack ./src/WopiHost.Core/WopiHost.Core.csproj -c Release /p:TargetFrameworks=net10.0 /p:PackageId=Pilotlight.WopiHost.Core /p:RepositoryUrl=https://github.com/taylordgordon/WopiHost.git /p:Version=${{ github.event.inputs.version || '1.0.0' }} /p:NoWarn=NU5104 /p:NoPackageAnalysis=true
+      run: dotnet pack ./src/WopiHost.Core/WopiHost.Core.csproj -c Release /p:TargetFrameworks=net10.0 /p:PackageId=Pilotlight.WopiHost.Core /p:PackageVersion=${{ github.event.inputs.version || '1.0.0' }} /p:RepositoryUrl=https://github.com/taylordgordon/WopiHost.git /p:NoWarn=NU5104 /p:NoPackageAnalysis=true
     
     - name: Pack WopiHost.MemoryLockProvider
-      run: dotnet pack ./src/WopiHost.MemoryLockProvider/WopiHost.MemoryLockProvider.csproj -c Release /p:TargetFrameworks=net10.0 /p:PackageId=Pilotlight.WopiHost.MemoryLockProvider /p:RepositoryUrl=https://github.com/taylordgordon/WopiHost.git /p:Version=${{ github.event.inputs.version || '1.0.0' }} /p:NoWarn=NU5104 /p:NoPackageAnalysis=true
+      run: dotnet pack ./src/WopiHost.MemoryLockProvider/WopiHost.MemoryLockProvider.csproj -c Release /p:TargetFrameworks=net10.0 /p:PackageId=Pilotlight.WopiHost.MemoryLockProvider /p:PackageVersion=${{ github.event.inputs.version || '1.0.0' }} /p:RepositoryUrl=https://github.com/taylordgordon/WopiHost.git /p:NoWarn=NU5104 /p:NoPackageAnalysis=true
     
     - name: Pack WopiHost.Url
-      run: dotnet pack ./src/WopiHost.Url/WopiHost.Url.csproj -c Release /p:TargetFrameworks=net10.0 /p:PackageId=Pilotlight.WopiHost.Url /p:RepositoryUrl=https://github.com/taylordgordon/WopiHost.git /p:Version=${{ github.event.inputs.version || '1.0.0' }} /p:NoWarn=NU5104 /p:NoPackageAnalysis=true
+      run: dotnet pack ./src/WopiHost.Url/WopiHost.Url.csproj -c Release /p:TargetFrameworks=net10.0 /p:PackageId=Pilotlight.WopiHost.Url /p:PackageVersion=${{ github.event.inputs.version || '1.0.0' }} /p:RepositoryUrl=https://github.com/taylordgordon/WopiHost.git /p:NoWarn=NU5104 /p:NoPackageAnalysis=true
     
     - name: Publish to GitHub Packages
       run: |
