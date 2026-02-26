@@ -23,19 +23,19 @@ jobs:
         dotnet-version: '10.0.x'
     
     - name: Pack WopiHost.Abstractions
-      run: dotnet pack ./src/WopiHost.Abstractions/WopiHost.Abstractions.csproj -c Release -p:TargetFramework=net10.0 -p:RepositoryUrl=https://github.com/taylordgordon/WopiHost.git -p:Version=${{ github.event.inputs.version || '1.0.0' }}
+      run: dotnet pack ./src/WopiHost.Abstractions/WopiHost.Abstractions.csproj -c Release /p:TargetFrameworks=net10.0 /p:RepositoryUrl=https://github.com/taylordgordon/WopiHost.git /p:Version=${{ github.event.inputs.version || '1.0.0' }}
     
     - name: Pack WopiHost.Discovery
-      run: dotnet pack ./src/WopiHost.Discovery/WopiHost.Discovery.csproj -c Release -p:TargetFramework=net10.0 -p:RepositoryUrl=https://github.com/taylordgordon/WopiHost.git -p:Version=${{ github.event.inputs.version || '1.0.0' }}
+      run: dotnet pack ./src/WopiHost.Discovery/WopiHost.Discovery.csproj -c Release /p:TargetFrameworks=net10.0 /p:RepositoryUrl=https://github.com/taylordgordon/WopiHost.git /p:Version=${{ github.event.inputs.version || '1.0.0' }}
     
     - name: Pack WopiHost.Core
-      run: dotnet pack ./src/WopiHost.Core/WopiHost.Core.csproj -c Release -p:TargetFramework=net10.0 -p:RepositoryUrl=https://github.com/taylordgordon/WopiHost.git -p:Version=${{ github.event.inputs.version || '1.0.0' }}
+      run: dotnet pack ./src/WopiHost.Core/WopiHost.Core.csproj -c Release /p:TargetFrameworks=net10.0 /p:RepositoryUrl=https://github.com/taylordgordon/WopiHost.git /p:Version=${{ github.event.inputs.version || '1.0.0' }}
     
     - name: Pack WopiHost.MemoryLockProvider
-      run: dotnet pack ./src/WopiHost.MemoryLockProvider/WopiHost.MemoryLockProvider.csproj -c Release -p:TargetFramework=net10.0 -p:RepositoryUrl=https://github.com/taylordgordon/WopiHost.git -p:Version=${{ github.event.inputs.version || '1.0.0' }}
+      run: dotnet pack ./src/WopiHost.MemoryLockProvider/WopiHost.MemoryLockProvider.csproj -c Release /p:TargetFrameworks=net10.0 /p:RepositoryUrl=https://github.com/taylordgordon/WopiHost.git /p:Version=${{ github.event.inputs.version || '1.0.0' }}
     
     - name: Pack WopiHost.Url
-      run: dotnet pack ./src/WopiHost.Url/WopiHost.Url.csproj -c Release -p:TargetFramework=net10.0 -p:RepositoryUrl=https://github.com/taylordgordon/WopiHost.git -p:Version=${{ github.event.inputs.version || '1.0.0' }}
+      run: dotnet pack ./src/WopiHost.Url/WopiHost.Url.csproj -c Release /p:TargetFrameworks=net10.0 /p:RepositoryUrl=https://github.com/taylordgordon/WopiHost.git /p:Version=${{ github.event.inputs.version || '1.0.0' }}
     
     - name: Publish to GitHub Packages
       run: |
