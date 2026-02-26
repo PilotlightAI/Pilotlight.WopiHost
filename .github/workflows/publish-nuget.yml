@@ -22,11 +22,35 @@ jobs:
       with:
         dotnet-version: '10.0.x'
     
-    - name: Restore dependencies
-      run: dotnet restore
+    - name: Restore WopiHost.Abstractions
+      run: dotnet restore ./src/WopiHost.Abstractions/WopiHost.Abstractions.csproj
     
-    - name: Build
-      run: dotnet build --configuration Release --no-restore
+    - name: Restore WopiHost.Discovery
+      run: dotnet restore ./src/WopiHost.Discovery/WopiHost.Discovery.csproj
+    
+    - name: Restore WopiHost.Core
+      run: dotnet restore ./src/WopiHost.Core/WopiHost.Core.csproj
+    
+    - name: Restore WopiHost.MemoryLockProvider
+      run: dotnet restore ./src/WopiHost.MemoryLockProvider/WopiHost.MemoryLockProvider.csproj
+    
+    - name: Restore WopiHost.Url
+      run: dotnet restore ./src/WopiHost.Url/WopiHost.Url.csproj
+    
+    - name: Build WopiHost.Abstractions
+      run: dotnet build ./src/WopiHost.Abstractions/WopiHost.Abstractions.csproj --configuration Release --no-restore
+    
+    - name: Build WopiHost.Discovery
+      run: dotnet build ./src/WopiHost.Discovery/WopiHost.Discovery.csproj --configuration Release --no-restore
+    
+    - name: Build WopiHost.Core
+      run: dotnet build ./src/WopiHost.Core/WopiHost.Core.csproj --configuration Release --no-restore
+    
+    - name: Build WopiHost.MemoryLockProvider
+      run: dotnet build ./src/WopiHost.MemoryLockProvider/WopiHost.MemoryLockProvider.csproj --configuration Release --no-restore
+    
+    - name: Build WopiHost.Url
+      run: dotnet build ./src/WopiHost.Url/WopiHost.Url.csproj --configuration Release --no-restore
     
     - name: Pack WopiHost.Abstractions
       run: dotnet pack ./src/WopiHost.Abstractions/WopiHost.Abstractions.csproj -c Release --no-build -p:RepositoryUrl=https://github.com/taylordgordon/WopiHost.git -p:Version=${{ github.event.inputs.version || '1.0.0' }}
