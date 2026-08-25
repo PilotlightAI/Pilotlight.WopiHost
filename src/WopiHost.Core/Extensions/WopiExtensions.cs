@@ -14,14 +14,16 @@ namespace WopiHost.Core.Extensions;
 /// </summary>
 public static class WopiExtensions
 {
-    private static readonly SHA256 Sha = SHA256.Create();
-
     /// <summary>
     /// Returns base64 encoding of checksum (or calculates it from original contents if not provided)
     /// </summary>
     /// <param name="file">File object.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>base64 encoded sha256 checksum</returns>
+    /// <remarks>
+    /// Uses the static <see cref="SHA256.HashDataAsync(Stream, CancellationToken)"/> one-shot API because
+    /// <see cref="SHA256"/> instance methods are not thread-safe across concurrent CheckFileInfo requests.
+    /// </remarks>
     public static async Task<string> GetEncodedSha256(this IWopiFile file, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(file);
@@ -29,7 +31,7 @@ public static class WopiExtensions
         if (result is null)
         {
             using var stream = await file.GetReadStream(cancellationToken);
-            result = await Sha.ComputeHashAsync(stream, cancellationToken);
+            result = await SHA256.HashDataAsync(stream, cancellationToken);
         }
         return Convert.ToBase64String(result);
     }
