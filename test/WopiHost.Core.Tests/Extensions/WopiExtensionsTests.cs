@@ -39,9 +39,33 @@ public class WopiExtensionsTests
         var result = await mockFile.Object.GetEncodedSha256();
 
         // Assert
-        var stream2 = new MemoryStream([1, 2, 3, 4, 5]);
-        var expectedChecksum = await SHA256.Create().ComputeHashAsync(stream2);
+        var expectedChecksum = SHA256.HashData([1, 2, 3, 4, 5]);
         Assert.Equal(Convert.ToBase64String(expectedChecksum), result);
+    }
+
+    [Fact]
+    public async Task GetEncodedSha256_CalculatesChecksumsConcurrently()
+    {
+        // Arrange
+        const int requestCount = 32;
+        byte[] content = [1, 2, 3, 4, 5];
+        var releaseReads = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var mockFile = new Mock<IWopiFile>();
+        mockFile.Setup(f => f.Checksum).Returns((byte[]?)null);
+        mockFile
+            .Setup(f => f.GetReadStream(It.IsAny<CancellationToken>()))
+            .Returns(() => Task.FromResult<Stream>(new GatedReadStream(content, releaseReads.Task)));
+
+        // Act
+        var hashTasks = Enumerable.Range(0, requestCount)
+            .Select(_ => mockFile.Object.GetEncodedSha256())
+            .ToArray();
+        releaseReads.SetResult();
+        var results = await Task.WhenAll(hashTasks);
+
+        // Assert
+        var expectedChecksum = Convert.ToBase64String(SHA256.HashData(content));
+        Assert.All(results, result => Assert.Equal(expectedChecksum, result));
     }
 
     [Fact]
@@ -233,5 +257,67 @@ public class WopiExtensionsTests
         // Assert
         Assert.Equal("test", result.Name);
         Assert.True(eventFired);
+    }
+
+    private sealed class GatedReadStream(byte[] content, Task releaseReads) : Stream
+    {
+        private readonly MemoryStream inner = new(content, writable: false);
+        private bool isFirstRead = true;
+
+        public override bool CanRead => true;
+        public override bool CanSeek => false;
+        public override bool CanWrite => false;
+        public override long Length => throw new NotSupportedException();
+        public override long Position
+        {
+            get => throw new NotSupportedException();
+            set => throw new NotSupportedException();
+        }
+
+        public override void Flush()
+        {
+        }
+
+        public override int Read(byte[] buffer, int offset, int count) => inner.Read(buffer, offset, count);
+
+        public override async Task<int> ReadAsync(
+            byte[] buffer,
+            int offset,
+            int count,
+            CancellationToken cancellationToken)
+        {
+            await WaitForRelease();
+            return await inner.ReadAsync(buffer.AsMemory(offset, count), cancellationToken);
+        }
+
+        public override async ValueTask<int> ReadAsync(
+            Memory<byte> buffer,
+            CancellationToken cancellationToken = default)
+        {
+            await WaitForRelease();
+            return await inner.ReadAsync(buffer, cancellationToken);
+        }
+
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                inner.Dispose();
+            }
+            base.Dispose(disposing);
+        }
+
+        private async Task WaitForRelease()
+        {
+            if (isFirstRead)
+            {
+                isFirstRead = false;
+                await releaseReads;
+            }
+        }
     }
 }
