@@ -4,11 +4,12 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using WopiHost.Abstractions;
+using WopiHost.Core.Extensions;
 
 namespace WopiHost.Core.Security.Authentication;
 
 /// <summary>
-/// Class facilitating authentication using an access token query parameter.
+/// Class facilitating authentication using an access token (access_token query parameter, access_token form field, or Authorization: Bearer header).
 /// </summary>
 /// <remarks>
 /// Creates an instance of <see cref="AccessTokenHandler"/>.
@@ -24,7 +25,8 @@ public class AccessTokenHandler(
     UrlEncoder encoder) : AuthenticationHandler<AccessTokenAuthenticationOptions>(options, logger, encoder)
 {
     /// <summary>
-    /// Handles authentication using the access_token query parameter.
+    /// Handles authentication using the access token resolved by <see cref="HttpRequestExtensions.GetAccessToken(Microsoft.AspNetCore.Http.HttpRequest)"/>
+    /// (query string first, then form data, then the Authorization: Bearer header).
     /// </summary>
     /// <returns><see cref="AuthenticateResult"/> set to <see cref="AuthenticateResult.Succeeded"/> when the token is valid and <see cref="AuthenticateResult.Failure"/> when the token is invalid or expired.</returns>
     protected override async Task<AuthenticateResult> HandleAuthenticateAsync()
@@ -38,14 +40,19 @@ public class AccessTokenHandler(
                 return AuthenticateResult.NoResult();
             }
 
-            var token = Context.Request.Query[AccessTokenDefaults.ACCESS_TOKEN_QUERY_NAME].ToString();
-
+            string token;
             if (Context.Request.Path.Value == "/wopibootstrapper")
             {
                 //TODO: Implement properly: https://learn.microsoft.com/microsoft-365/cloud-storage-partner-program/rest/bootstrapper/bootstrap
                 //Should be removed or replaced with bearer token check
                 token = securityHandler.WriteToken(
                     await securityHandler.GenerateAccessToken("Anonymous", Convert.ToBase64String(Encoding.UTF8.GetBytes(".\\"))));
+            }
+            else
+            {
+                // Same resolver as WopiOriginValidationActionFilter (query string, then form, then Authorization: Bearer),
+                // so the token that authenticates the request is the token its proof is validated against.
+                token = Context.Request.GetAccessToken();
             }
 
 
@@ -68,20 +75,29 @@ public class AccessTokenHandler(
                 }
                 else
                 {
-                    Logger.LogError("Principal not found from token");
+                    LogFailure("PrincipalNotFound");
                     return AuthenticateResult.Fail("Principal not found.");
                 }
             }
             else
             {
-                Logger.LogError("Token not found in request");
+                LogFailure("TokenNotFound");
                 return AuthenticateResult.Fail("Token not found.");
             }
         }
         catch (Exception ex)
         {
-            Logger.LogError(new EventId(ex.HResult), ex, ex.Message);
+            LogFailure("Exception", ex);
             return AuthenticateResult.Fail(ex);
         }
     }
+
+    private void LogFailure(string result, Exception? exception = null) =>
+        WopiAuthenticationDiagnostics.LogFailure(
+            Logger,
+            LogLevel.Error,
+            Context.Request,
+            WopiAuthenticationDiagnostics.AUTHENTICATION_STAGE,
+            result,
+            exception);
 }

@@ -1,7 +1,10 @@
+using System.Text;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Primitives;
 using Moq;
 using WopiHost.Core.Extensions;
+using WopiHost.Core.Infrastructure;
+using WopiHost.Core.Security.Authentication;
 
 namespace WopiHost.Core.Tests.Extensions;
 
@@ -206,6 +209,100 @@ public class HttpRequestExtensionsTests
                 Assert.Contains("/external/wopi/files", result);
                 break;
         }
+    }
+
+    [Fact]
+    public void GetAccessToken_WithBearerHeaderOnly_ReturnsHeaderToken()
+    {
+        var request = CreateTokenRequest(bearerToken: "header-token");
+
+        Assert.Equal("header-token", request.GetAccessToken());
+    }
+
+    [Fact]
+    public void GetAccessToken_WithQueryAndBearerHeader_PrefersQueryToken()
+    {
+        var request = CreateTokenRequest(queryToken: "query-token", bearerToken: "header-token");
+
+        Assert.Equal("query-token", request.GetAccessToken());
+    }
+
+    [Fact]
+    public void GetAccessToken_WithFormAndBearerHeader_PrefersFormToken()
+    {
+        var request = CreateTokenRequest(formToken: "form-token", bearerToken: "header-token");
+
+        Assert.Equal("form-token", request.GetAccessToken());
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("Bearer ")]
+    [InlineData("Bearer    ")]
+    [InlineData("Basic dXNlcjpwYXNz")]
+    public void GetAccessToken_WithoutUsableToken_ReturnsEmpty(string? authorizationHeader)
+    {
+        var request = CreateTokenRequest();
+        if (authorizationHeader is not null)
+        {
+            request.Headers.Authorization = authorizationHeader;
+        }
+
+        Assert.Equal(string.Empty, request.GetAccessToken());
+    }
+
+    [Fact]
+    public void GetAccessTokenPresence_ReportsEachCarrierAndProofHeader()
+    {
+        var request = CreateTokenRequest(queryToken: "query-token", formToken: "form-token", bearerToken: "header-token");
+        request.Headers[WopiHeaders.PROOF] = "proof";
+        request.Headers[WopiHeaders.TIMESTAMP] = "638000000000000000";
+
+        var presence = request.GetAccessTokenPresence();
+
+        Assert.Equal(new AccessTokenPresence(QueryToken: true, FormToken: true, BearerToken: true, Proof: true, TimeStamp: true), presence);
+    }
+
+    [Fact]
+    public void GetAccessTokenPresence_WithNothing_ReportsAllFalse()
+    {
+        var presence = CreateTokenRequest().GetAccessTokenPresence();
+
+        Assert.Equal(default, presence);
+    }
+
+    [Fact]
+    public void GetAccessTokenPresence_WithUnreadableForm_ReportsNoFormTokenWithoutThrowing()
+    {
+        var request = CreateTokenRequest(bearerToken: "header-token");
+        request.ContentType = "multipart/form-data"; // no boundary: reading the form throws
+
+        var presence = request.GetAccessTokenPresence();
+
+        Assert.False(presence.FormToken);
+        Assert.True(presence.BearerToken);
+    }
+
+    private static HttpRequest CreateTokenRequest(string? queryToken = null, string? formToken = null, string? bearerToken = null)
+    {
+        var context = new DefaultHttpContext();
+        var request = context.Request;
+        request.Method = HttpMethods.Post;
+        request.Path = "/wopi/files/1";
+        if (queryToken is not null)
+        {
+            request.QueryString = QueryString.Create(AccessTokenDefaults.ACCESS_TOKEN_QUERY_NAME, queryToken);
+        }
+        if (formToken is not null)
+        {
+            request.ContentType = "application/x-www-form-urlencoded";
+            request.Body = new MemoryStream(Encoding.UTF8.GetBytes(AccessTokenDefaults.ACCESS_TOKEN_QUERY_NAME + "=" + Uri.EscapeDataString(formToken)));
+        }
+        if (bearerToken is not null)
+        {
+            request.Headers.Authorization = "Bearer " + bearerToken;
+        }
+        return request;
     }
 
     private static HttpRequest CreateMockRequest(string scheme, string host, string? pathBase, string? path, string? queryString)

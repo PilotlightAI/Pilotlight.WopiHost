@@ -24,10 +24,11 @@ public class WopiOriginValidationActionFilter(IWopiProofValidator proofValidator
     /// <param name="next"></param>
     public async Task OnActionExecutionAsync(ActionExecutingContext context, ActionExecutionDelegate next)
     {
-        string accessToken = context.HttpContext.Request.GetAccessToken();
+        var request = context.HttpContext.Request;
+        string accessToken = request.GetAccessToken();
         if (string.IsNullOrEmpty(accessToken))
         {
-            logger.LogWarning("Access token is missing from the request");
+            LogFailure(request, "TokenNotFound");
             context.HttpContext.Response.StatusCode = (int)HttpStatusCode.InternalServerError;
             return;
         }
@@ -35,11 +36,20 @@ public class WopiOriginValidationActionFilter(IWopiProofValidator proofValidator
         var validated = await proofValidator.ValidateProofAsync(context.HttpContext, accessToken); 
         if (!validated)
         {
+            LogFailure(request, "ProofInvalid");
             context.Result = new StatusCodeResult(StatusCodes.Status500InternalServerError);
             return;
         }
 
         await next();
     }
+
+    private void LogFailure(HttpRequest request, string result) =>
+        WopiAuthenticationDiagnostics.LogFailure(
+            logger,
+            LogLevel.Warning,
+            request,
+            WopiAuthenticationDiagnostics.PROOF_VALIDATION_STAGE,
+            result);
     
 }
