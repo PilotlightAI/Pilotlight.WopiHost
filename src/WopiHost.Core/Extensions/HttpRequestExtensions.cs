@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Primitives;
+using WopiHost.Core.Infrastructure;
 using WopiHost.Core.Security.Authentication;
 
 namespace WopiHost.Core.Extensions;
@@ -24,33 +25,98 @@ public static class HttpRequestExtensions
     public static string GetAccessToken(this HttpRequest request)
     {
         // First try to get from query string
-        if (request.Query.TryGetValue(AccessTokenDefaults.ACCESS_TOKEN_QUERY_NAME, out StringValues tokenFromQuery) && 
+        if (TryGetQueryToken(request, out var token))
+        {
+            return token;
+        }
+
+        // Then try to get from form data in POST requests
+        if (TryGetFormToken(request, out token))
+        {
+            return token;
+        }
+
+        // Lastly check header (less common)
+        if (TryGetBearerToken(request, out token))
+        {
+            return token;
+        }
+
+        return string.Empty;
+    }
+
+    /// <summary>
+    /// Reports which access token carriers and WOPI proof headers are present on the request, without reading out any of their values.
+    /// Used for diagnostics only; never throws.
+    /// </summary>
+    /// <param name="request">The HTTP request.</param>
+    internal static AccessTokenPresence GetAccessTokenPresence(this HttpRequest request)
+    {
+        bool hasFormToken;
+        try
+        {
+            hasFormToken = TryGetFormToken(request, out _);
+        }
+        catch (Exception)
+        {
+            // A form that cannot be read carries no usable token; diagnostics must not fail the request.
+            hasFormToken = false;
+        }
+
+        return new AccessTokenPresence(
+            QueryToken: TryGetQueryToken(request, out _),
+            FormToken: hasFormToken,
+            BearerToken: TryGetBearerToken(request, out _),
+            Proof: HasHeader(request, WopiHeaders.PROOF),
+            TimeStamp: HasHeader(request, WopiHeaders.TIMESTAMP));
+    }
+
+    private static bool TryGetQueryToken(HttpRequest request, out string token)
+    {
+        if (request.Query.TryGetValue(AccessTokenDefaults.ACCESS_TOKEN_QUERY_NAME, out StringValues tokenFromQuery) &&
             !StringValues.IsNullOrEmpty(tokenFromQuery))
         {
-            return tokenFromQuery.ToString();
+            token = tokenFromQuery.ToString();
+            return true;
         }
-        
-        // Then try to get from form data in POST requests
-        if (request.HasFormContentType && 
-            request.Form.TryGetValue(AccessTokenDefaults.ACCESS_TOKEN_QUERY_NAME, out StringValues tokenFromForm) && 
+
+        token = string.Empty;
+        return false;
+    }
+
+    private static bool TryGetFormToken(HttpRequest request, out string token)
+    {
+        if (request.HasFormContentType &&
+            request.Form.TryGetValue(AccessTokenDefaults.ACCESS_TOKEN_QUERY_NAME, out StringValues tokenFromForm) &&
             !StringValues.IsNullOrEmpty(tokenFromForm))
         {
-            return tokenFromForm.ToString();
+            token = tokenFromForm.ToString();
+            return true;
         }
-        
-        // Lastly check header (less common)
-        if (request.Headers.TryGetValue("Authorization", out StringValues authHeader) && 
+
+        token = string.Empty;
+        return false;
+    }
+
+    private static bool TryGetBearerToken(HttpRequest request, out string token)
+    {
+        if (request.Headers.TryGetValue("Authorization", out StringValues authHeader) &&
             !StringValues.IsNullOrEmpty(authHeader))
         {
             var header = authHeader.ToString();
             if (header.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
             {
-                return header["Bearer ".Length..].Trim();
+                token = header["Bearer ".Length..].Trim();
+                return token.Length > 0;
             }
         }
-        
-        return string.Empty;
+
+        token = string.Empty;
+        return false;
     }
+
+    private static bool HasHeader(HttpRequest request, string name) =>
+        request.Headers.TryGetValue(name, out StringValues value) && !StringValues.IsNullOrEmpty(value);
     
     /// <summary>
     /// Proxy-aware construction of URL request.
