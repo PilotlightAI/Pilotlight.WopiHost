@@ -1,11 +1,12 @@
 ﻿using System.Diagnostics.CodeAnalysis;
 using System.Xml.Linq;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using WopiHost.Discovery.Enumerations;
 
 namespace WopiHost.Discovery.Tests;
 
-public class WopiDiscovererTests
+public class WopiDiscovererTests : IDisposable
 {
     private WopiDiscoverer? _wopiDiscoverer;
     private const string XmlOos2016 = "OOS2016_discovery.xml";
@@ -15,6 +16,86 @@ public class WopiDiscovererTests
 
     public WopiDiscovererTests()
     {
+    }
+
+    public void Dispose() => _wopiDiscoverer?.Dispose();
+
+    [Fact]
+    public async Task ConcurrentProofKeyLookups_FetchOnce()
+    {
+        var provider = new GatedDiscoveryProvider();
+        using var discoverer = new WopiDiscoverer(provider, Options.Create(new DiscoveryOptions()));
+        var reads = Enumerable.Range(0, 16).Select(_ => discoverer.GetProofKeysAsync()).ToArray();
+        await provider.Entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        provider.Release.SetResult(true);
+
+        var keys = await Task.WhenAll(reads).WaitAsync(TimeSpan.FromSeconds(5));
+
+        Assert.Equal(1, provider.Calls);
+        Assert.All(keys, key => Assert.Equal("current", key.Value));
+    }
+
+    [Fact]
+    public async Task ConcurrentAppLookups_FetchOnce()
+    {
+        var provider = new GatedDiscoveryProvider();
+        using var discoverer = new WopiDiscoverer(provider, Options.Create(new DiscoveryOptions { NetZone = NetZoneEnum.ExternalHttps }));
+        var reads = Enumerable.Range(0, 16).Select(_ => discoverer.SupportsExtensionAsync("docx")).ToArray();
+        await provider.Entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        provider.Release.SetResult(true);
+
+        var supported = await Task.WhenAll(reads).WaitAsync(TimeSpan.FromSeconds(5));
+
+        Assert.Equal(1, provider.Calls);
+        Assert.All(supported, value => Assert.True(value));
+    }
+
+    [Fact]
+    public async Task OwnedDiscoverer_DisposesAfterUse()
+    {
+        var discoveryProvider = new GatedDiscoveryProvider();
+        discoveryProvider.Release.SetResult(true);
+        var services = new ServiceCollection();
+        services.AddWopiDiscovery<TestDiscoveryOptions>(options => options.NetZone = NetZoneEnum.ExternalHttps);
+        services.AddSingleton<IDiscoveryFileProvider>(discoveryProvider);
+        using var owner = services.BuildServiceProvider();
+        var discoverer = Assert.IsType<WopiDiscoverer>(owner.GetRequiredService<IDiscoverer>());
+        Assert.Same(discoverer, owner.GetRequiredService<IDiscoverer>());
+        Assert.True(await discoverer.SupportsExtensionAsync("docx"));
+        Assert.Equal("current", (await discoverer.GetProofKeysAsync()).Value);
+        Assert.Equal(2, discoveryProvider.Calls);
+
+        owner.Dispose();
+        owner.Dispose();
+        discoverer.Dispose();
+
+        await Assert.ThrowsAsync<ObjectDisposedException>(() => discoverer.GetProofKeysAsync());
+        await Assert.ThrowsAsync<ObjectDisposedException>(() => discoverer.SupportsExtensionAsync("docx"));
+    }
+
+    private sealed class TestDiscoveryOptions : IDiscoveryOptions
+    {
+        public Uri? ClientUrl => new("https://office.example");
+    }
+
+    private sealed class GatedDiscoveryProvider : IDiscoveryFileProvider
+    {
+        public TaskCompletionSource<bool> Entered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource<bool> Release { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public int Calls;
+
+        public async Task<XElement> GetDiscoveryXmlAsync()
+        {
+            Interlocked.Increment(ref Calls);
+            Entered.TrySetResult(true);
+            await Release.Task;
+            return XElement.Parse("""
+                <wopi-discovery>
+                  <net-zone name="external-https"><app name="Word"><action name="edit" ext="docx" urlsrc="https://office.example/edit" /></app></net-zone>
+                  <proof-key value="current" oldvalue="old" />
+                </wopi-discovery>
+                """);
+        }
     }
 
     [MemberNotNull(nameof(_wopiDiscoverer))]

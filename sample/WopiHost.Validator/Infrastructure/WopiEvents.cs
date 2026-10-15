@@ -1,4 +1,4 @@
-﻿using WopiHost.Abstractions;
+using WopiHost.Abstractions;
 using WopiHost.Core.Models;
 
 namespace WopiHost.Validator.Infrastructure;
@@ -41,6 +41,14 @@ public static class WopiEvents
             wopiCheckFileInfo.BreadcrumbDocName = "test";
             wopiCheckFileInfo.BreadcrumbFolderName = "root";
             wopiCheckFileInfo.BreadcrumbFolderUrl = new("https://example.com/folder");
+
+            wopiCheckFileInfo.HostNotes = string.Empty;
+            wopiCheckFileInfo.IrmPolicyDescription = string.Empty;
+            wopiCheckFileInfo.IrmPolicyTitle = string.Empty;
+            wopiCheckFileInfo.PresenceProvider = string.Empty;
+            wopiCheckFileInfo.PresenceUserId = string.Empty;
+            wopiCheckFileInfo.TenantId = string.Empty;
+            wopiCheckFileInfo.TimeZone = string.Empty;
         }
         return Task.FromResult(wopiCheckFileInfo);
     }

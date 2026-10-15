@@ -84,6 +84,39 @@ public class WopiOriginValidationActionFilterTests
         Assert.DoesNotContain("proof-value", entry.Message, StringComparison.Ordinal);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task UnsignedCheckFileInfo_RealValidator_Returns500WithoutCallingAction(bool hasQueryToken)
+    {
+        var proofLogger = new CapturingLogger<WopiProofValidator>();
+        var discoverer = new Mock<WopiHost.Discovery.IDiscoverer>(MockBehavior.Strict);
+        var validator = new WopiProofValidator(discoverer.Object, proofLogger);
+        var httpContext = CreateContext();
+        httpContext.Request.Method = HttpMethods.Get;
+        httpContext.Request.Headers.Authorization = "Bearer secret-token";
+        if (hasQueryToken)
+        {
+            httpContext.Request.QueryString = QueryString.Create(AccessTokenDefaults.ACCESS_TOKEN_QUERY_NAME, "secret-token");
+        }
+        var (context, next, nextCalled) = CreateFilterContext(httpContext);
+
+        await new WopiOriginValidationActionFilter(validator, _logger).OnActionExecutionAsync(context, next);
+
+        Assert.Equal(StatusCodes.Status500InternalServerError, Assert.IsType<StatusCodeResult>(context.Result).StatusCode);
+        Assert.False(nextCalled());
+        Assert.Equal("Missing required proof headers", Assert.Single(proofLogger.Entries).Message);
+        var entry = Assert.Single(_logger.PresenceLines);
+        Assert.Equal("ProofInvalid", entry.Values["Result"]);
+        Assert.Equal(hasQueryToken, entry.Values["HasQueryToken"]);
+        Assert.Equal(false, entry.Values["HasFormToken"]);
+        Assert.Equal(true, entry.Values["HasBearerToken"]);
+        Assert.Equal(false, entry.Values["HasProof"]);
+        Assert.Equal(false, entry.Values["HasTimeStamp"]);
+        Assert.DoesNotContain("secret-token", entry.Message, StringComparison.Ordinal);
+        discoverer.VerifyNoOtherCalls();
+    }
+
     private static DefaultHttpContext CreateContext()
     {
         var httpContext = new DefaultHttpContext();

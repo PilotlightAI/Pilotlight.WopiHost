@@ -1,4 +1,4 @@
-﻿namespace WopiHost.Discovery;
+namespace WopiHost.Discovery;
 
 /// <summary>
 /// Wraps a type in an expiring envelope.
@@ -11,11 +11,12 @@
 /// </remarks>
 /// <param name="valueProvider">A delegate that facilitates the creation of the value.</param>
 /// <exception cref="ArgumentNullException">The <paramref name="valueProvider"/> must be initialized.</exception>
-public class AsyncExpiringLazy<T>(Func<TemporaryValue<T>, Task<TemporaryValue<T>>> valueProvider)
+public class AsyncExpiringLazy<T>(Func<TemporaryValue<T>, Task<TemporaryValue<T>>> valueProvider) : IDisposable
 {
-    private static readonly SemaphoreSlim SyncLock = new(initialCount: 1);
+    private readonly SemaphoreSlim _syncLock = new(initialCount: 1);
     private readonly Func<TemporaryValue<T>, Task<TemporaryValue<T>>> _valueProvider = valueProvider ?? throw new ArgumentNullException(nameof(valueProvider));
     private TemporaryValue<T> _value;
+    private bool _disposed;
     private bool IsValueCreatedInternal => _value.Result != null && _value.ValidUntil > DateTimeOffset.UtcNow;
 
     /// <summary>
@@ -23,14 +24,14 @@ public class AsyncExpiringLazy<T>(Func<TemporaryValue<T>, Task<TemporaryValue<T>
     /// </summary>
     public async Task<bool> IsValueCreated()
     {
-        await SyncLock.WaitAsync().ConfigureAwait(false);
+        await _syncLock.WaitAsync().ConfigureAwait(false);
         try
         {
             return IsValueCreatedInternal;
         }
         finally
         {
-            SyncLock.Release();
+            _syncLock.Release();
         }
     }
 
@@ -39,29 +40,22 @@ public class AsyncExpiringLazy<T>(Func<TemporaryValue<T>, Task<TemporaryValue<T>
     /// </summary>
     public async Task<T> Value()
     {
-        await SyncLock.WaitAsync().ConfigureAwait(false);
+        // Keep the validity check and publication atomic for concurrent readers.
+        await _syncLock.WaitAsync().ConfigureAwait(false);
         try
         {
             if (IsValueCreatedInternal)
             {
                 return _value.Result;
             }
-        }
-        finally
-        {
-            SyncLock.Release();
-        }
 
-        await SyncLock.WaitAsync().ConfigureAwait(false);
-        try
-        {
             var result = await _valueProvider(_value).ConfigureAwait(false);
             _value = result;
             return _value.Result;
         }
         finally
         {
-            SyncLock.Release();
+            _syncLock.Release();
         }
     }
 
@@ -70,8 +64,34 @@ public class AsyncExpiringLazy<T>(Func<TemporaryValue<T>, Task<TemporaryValue<T>
     /// </summary>
     public async Task Invalidate()
     {
-        await SyncLock.WaitAsync().ConfigureAwait(false);
+        await _syncLock.WaitAsync().ConfigureAwait(false);
         _value = default;
-        SyncLock.Release();
+        _syncLock.Release();
+    }
+
+    /// <summary>
+    /// Releases the semaphore after all callers have finished using this cache.
+    /// </summary>
+    public void Dispose()
+    {
+        Dispose(disposing: true);
+        GC.SuppressFinalize(this);
+    }
+
+    /// <summary>
+    /// Releases managed resources held by this instance.
+    /// </summary>
+    /// <param name="disposing"><c>true</c> when called from <see cref="Dispose()"/>.</param>
+    protected virtual void Dispose(bool disposing)
+    {
+        if (_disposed)
+        {
+            return;
+        }
+        if (disposing)
+        {
+            _syncLock.Dispose();
+        }
+        _disposed = true;
     }
 }

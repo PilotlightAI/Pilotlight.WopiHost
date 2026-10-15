@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using Microsoft.AspNetCore.Http;
@@ -38,6 +39,18 @@ public class WopiProofValidator(IDiscoverer discoverer, ILogger<WopiProofValidat
                 logger.LogWarning("Missing required proof headers");
                 return false;
             }
+
+            if (!long.TryParse(receivedTimeStamp, NumberStyles.Integer, CultureInfo.InvariantCulture, out var timestampTicks))
+            {
+                return false;
+            }
+
+            var timestamp = new DateTimeOffset(timestampTicks, TimeSpan.Zero);
+            var now = _timeProvider.GetUtcNow();
+            if (timestamp < now - TimeSpan.FromMinutes(20) || timestamp > now + TimeSpan.FromMinutes(5))
+            {
+                return false;
+            }
             
             var sourceProofKeys = await discoverer.GetProofKeysAsync();
             if (sourceProofKeys.Value is null || sourceProofKeys.OldValue is null)
@@ -48,16 +61,11 @@ public class WopiProofValidator(IDiscoverer discoverer, ILogger<WopiProofValidat
             var receivedProofOld = request.Headers[WopiHeaders.PROOF_OLD].FirstOrDefault() ?? String.Empty;
             var receivedAccessToken = accessToken;
             
-            if (DateTime.UtcNow - new DateTime(Convert.ToInt64(receivedTimeStamp)) > TimeSpan.FromMinutes(20))
-            {
-                return false;
-            }
-
             var hostUrl = request.GetProxyAwareRequestUrl().ToUpperInvariant();
             
             var hostUrlBytes = Encoding.UTF8.GetBytes(hostUrl.ToUpperInvariant());
             var accessTokenBytes = Encoding.UTF8.GetBytes(receivedAccessToken);
-            var timeStampBytes = BitConverter.GetBytes(Convert.ToInt64(receivedTimeStamp)).Reverse().ToArray();
+            var timeStampBytes = BitConverter.GetBytes(timestampTicks).Reverse().ToArray();
             
             var expectedProof = new List<byte>(
                 4 + accessTokenBytes.Length +
@@ -100,4 +108,4 @@ public class WopiProofValidator(IDiscoverer discoverer, ILogger<WopiProofValidat
             return false;
         }
     }
-} 
+}
