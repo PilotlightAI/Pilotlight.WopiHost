@@ -5,6 +5,7 @@ using System.Text.Json;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Moq;
 using WopiHost.Abstractions;
@@ -54,6 +55,177 @@ public class FilesControllerTests
                 HttpContext = new DefaultHttpContext()
             }
         };
+    }
+
+    public static TheoryData<string> OptionalMetadataFields => new()
+    {
+        "ClientUrl", "FileEmbedCommandUrl", "HostAuthenticationId", "HostEmbeddedEditUrl", "HostNotes", "HostRestUrl",
+        "IrmPolicyDescription", "IrmPolicyTitle", "PresenceProvider", "PresenceUserId", "TenantId", "TimeZone", "UserPrincipalName",
+        "BreadcrumbBrandName", "BreadcrumbBrandUrl", "BreadcrumbDocName", "BreadcrumbFolderName", "BreadcrumbFolderUrl",
+        "CloseUrl", "DownloadUrl", "FileSharingUrl", "FileUrl", "FileVersionUrl", "HostEditUrl", "HostEmbeddedViewUrl",
+        "HostViewUrl", "SignInUrl", "SignoutUrl",
+    };
+
+    [Theory]
+    [MemberData(nameof(OptionalMetadataFields))]
+    public async Task CheckFileInfo_EmitsConfiguredMetadata(string propertyName)
+    {
+        using var unset = await ReadCheckFileInfo(info => info);
+        Assert.False(unset.RootElement.TryGetProperty(propertyName, out _));
+
+        var property = typeof(WopiCheckFileInfo).GetProperty(propertyName)!;
+        object value = property.PropertyType == typeof(Uri) ? new Uri("https://host.example/metadata") : "configured";
+        using var populated = await ReadCheckFileInfo(info =>
+        {
+            property.SetValue(info, value);
+            return info;
+        });
+        Assert.Equal(value.ToString(), populated.RootElement.GetProperty(propertyName).GetString());
+
+        using var cleared = await ReadCheckFileInfo(info =>
+        {
+            property.SetValue(info, null);
+            return info;
+        });
+        Assert.False(cleared.RootElement.TryGetProperty(propertyName, out _));
+    }
+
+    [Theory]
+    [InlineData("BreadcrumbDocUrl")]
+    [InlineData("HostName")]
+    [InlineData("PrivacyUrl")]
+    public async Task CheckFileInfo_OmitsDeprecatedMetadata(string propertyName)
+    {
+        using var unset = await ReadCheckFileInfo(info => info);
+        Assert.False(unset.RootElement.TryGetProperty(propertyName, out _));
+        var property = typeof(WopiCheckFileInfo).GetProperty(propertyName)!;
+        using var populated = await ReadCheckFileInfo(info =>
+        {
+            property.SetValue(info, property.PropertyType == typeof(Uri) ? new Uri("https://host.example/deprecated") : "deprecated");
+            return info;
+        });
+
+        Assert.False(populated.RootElement.TryGetProperty(propertyName, out _));
+    }
+
+    [Fact]
+    public async Task CheckFileInfo_PreservesPlatformCapabilityProfile()
+    {
+        securityHandlerMock.Setup(s => s.GetUserPermissions(It.IsAny<ClaimsPrincipal>(), It.IsAny<IWopiFile>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(WopiUserPermissions.UserCanWrite | WopiUserPermissions.UserCanAttend |
+                WopiUserPermissions.UserCanPresent | WopiUserPermissions.UserCanNotWriteRelative);
+        using var result = await ReadCheckFileInfo(info =>
+        {
+            info.SupportsCoauth = true;
+            info.SupportsEcosystem = true;
+            info.SupportsGetFileWopiSrc = true;
+            info.SupportsRename = false;
+            info.SupportsDeleteFile = false;
+            info.SupportsExtendedLockLength = true;
+            info.SupportsUserInfo = true;
+            info.SupportsUpdate = true;
+            info.SupportsContainers = false;
+            info.SupportsFolders = false;
+            info.SupportsFileCreation = false;
+            info.SupportsScenarioLinks = false;
+            info.SupportsSecureStore = false;
+            return info;
+        }, authenticated: true);
+
+        foreach (var name in new[] { "SupportsLocks", "SupportsGetLock", "SupportsExtendedLockLength", "SupportsUpdate",
+                     "SupportsEcosystem", "SupportsUserInfo", "UserCanNotWriteRelative", "UserCanWrite" })
+        {
+            Assert.True(result.RootElement.GetProperty(name).GetBoolean(), name);
+        }
+        foreach (var name in new[] { "SupportsCobalt", "SupportsRename", "SupportsDeleteFile", "SupportsFolders", "SupportsContainers", "UserCanRename" })
+        {
+            Assert.False(result.RootElement.GetProperty(name).GetBoolean(), name);
+        }
+        foreach (var name in new[] { "SupportsCoauth", "SupportsGetFileWopiSrc", "SupportsFileCreation", "SupportsScenarioLinks",
+                     "SupportsSecureStore", "CloseButtonClosesWindow" })
+        {
+            Assert.False(result.RootElement.TryGetProperty(name, out _), name);
+        }
+        Assert.Equal(0, result.RootElement.GetProperty("SupportedShareUrlTypes").GetArrayLength());
+    }
+
+    [Theory]
+    [InlineData("SupportsCoauth")]
+    [InlineData("SupportsGetFileWopiSrc")]
+    [InlineData("SupportsFileCreation")]
+    [InlineData("SupportsScenarioLinks")]
+    [InlineData("SupportsSecureStore")]
+    [InlineData("CloseButtonClosesWindow")]
+    public async Task CheckFileInfo_DoesNotActivateHiddenCapabilities(string propertyName)
+    {
+        using var result = await ReadCheckFileInfo(info =>
+        {
+            typeof(WopiCheckFileInfo).GetProperty(propertyName)!.SetValue(info, true);
+            return info;
+        });
+
+        Assert.False(result.RootElement.TryGetProperty(propertyName, out _));
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("user@example.com")]
+    public async Task CheckFileInfo_PreservesExplicitUserPrincipalName(string? upn)
+    {
+        using var result = await ReadCheckFileInfo(info =>
+        {
+            info.UserPrincipalName = upn;
+            return info;
+        }, authenticated: true);
+
+        if (upn is null)
+        {
+            Assert.False(result.RootElement.TryGetProperty("UserPrincipalName", out _));
+        }
+        else
+        {
+            Assert.Equal(upn, result.RootElement.GetProperty("UserPrincipalName").GetString());
+        }
+    }
+
+    [Fact]
+    public async Task CheckFileInfo_EmitsDerivedMetadata()
+    {
+        using var result = await ReadCheckFileInfo(info => new ExtendedCheckFileInfo
+        {
+            BaseFileName = info.BaseFileName, OwnerId = info.OwnerId, UserId = info.UserId, Version = info.Version,
+            UserPrincipalName = "user@example.com",
+        });
+
+        Assert.Equal("extension", result.RootElement.GetProperty("CustomMetadata").GetString());
+        Assert.Equal("user@example.com", result.RootElement.GetProperty("UserPrincipalName").GetString());
+    }
+
+    private async Task<JsonDocument> ReadCheckFileInfo(Func<WopiCheckFileInfo, WopiCheckFileInfo> callback, bool authenticated = false)
+    {
+        var file = new Mock<IWopiFile>();
+        file.SetupGet(f => f.Name).Returns("report");
+        file.SetupGet(f => f.Extension).Returns("docx");
+        file.SetupGet(f => f.Owner).Returns("owner");
+        file.SetupGet(f => f.Checksum).Returns([1, 2, 3]);
+        storageProviderMock.Setup(s => s.GetWopiResource<IWopiFile>("metadata", It.IsAny<CancellationToken>())).ReturnsAsync(file.Object);
+        wopiHostOptionsMock.Object.Value.OnCheckFileInfo = context => Task.FromResult(callback(context.CheckFileInfo));
+        using var services = new ServiceCollection()
+            .AddSingleton(securityHandlerMock.Object)
+            .AddSingleton(wopiHostOptionsMock.Object)
+            .BuildServiceProvider();
+        controller.HttpContext.RequestServices = services;
+        controller.HttpContext.User = new ClaimsPrincipal(new ClaimsIdentity(
+            [new Claim(ClaimTypes.NameIdentifier, "user")], authenticated ? "test" : null));
+        var result = Assert.IsType<ContentResult>(await controller.CheckFileInfo("metadata"));
+        Assert.Equal(StatusCodes.Status200OK, result.StatusCode);
+        return JsonDocument.Parse(result.Content!);
+    }
+
+    private sealed class ExtendedCheckFileInfo : WopiCheckFileInfo
+    {
+        public string CustomMetadata => "extension";
     }
 
     [Fact]

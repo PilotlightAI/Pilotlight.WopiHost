@@ -8,14 +8,14 @@ on:
       version:
         description: 'Package version (e.g., 1.0.0)'
         required: false
-        default: '1.0.2'
+        default: '1.1.0'
 
 permissions:
   contents: read
   packages: write
 
 env:
-  VERSION: ${{ github.event.inputs.version || '1.0.2' }}
+  VERSION: ${{ github.event.inputs.version || '1.1.0' }}
   REPO_URL: https://github.com/${{ github.repository }}.git
 
 jobs:
